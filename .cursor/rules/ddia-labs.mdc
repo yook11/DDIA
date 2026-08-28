@@ -8,8 +8,8 @@ alwaysApply: true
 This repo is an in-process lab for DDIA anomalies, not a production system.
 
 - Keep experiments in-process. Do not add real networks, extra processes, or consensus until the lab's topic requires them.
-- Time and replica apply positions must be injectable from tests (pause, advance, pin a lagging follower).
-- Writes and apply behavior must be swappable so the same test can pass or fail when the implementation changes.
-- Name tests after the anomaly they show (`ReadYourWrites`, `MonotonicReads`, `ConsistentPrefix`).
+- Application code must not know about lag. Do not call `Step` from tests or handlers; only the seeded scheduler advances followers.
+- Writes and apply behavior must be swappable so the same invariant can pass or fail when routing changes.
+- Name tests after the anomaly or invariant they show (`ReadAfterWrite`, `MonotonicReads`).
 - Do not chase production quality: no connection pooling, retries, metrics, or "realistic" networking for its own sake.
-- Do not summarize book chapters in code comments. State only the experiment's contract (nodes, log, apply index, who serves reads).
+- Do not summarize book chapters in code comments. State only the experiment's contract.
