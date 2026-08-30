@@ -1,15 +1,43 @@
 ---
-description: DDIA 実験場の進め方。異常の再現、差し替え、テスト名の付け方。
+description: DDIA 実験場の進め方。層の境界、異常の再現、差し替え、テスト名の付け方。
 alwaysApply: true
 ---
 
 # DDIA labs
 
-This repo is an in-process lab for DDIA anomalies, not a production system.
+A lab for reproducing DDIA anomalies, not a production system.
+The bulletin board (`bbs/`) is the application. The client (`client/`) is the
+handle that picks replicas — present for both simulation and a real multi-node DB.
+Labs own only scenarios and invariant checks.
 
-- Keep experiments in-process. Do not add real networks, extra processes, or consensus until the lab's topic requires them.
-- Application code must not know about lag. Do not call `Step` from tests or handlers; only the seeded scheduler advances followers.
-- Writes and apply behavior must be swappable so the same invariant can pass or fail when routing changes.
+## Layers
+
+- Dependencies go one way: `bbs` ← `client` ← `sim` ← `labs`, and
+  `bbs` ← `store` ← `transport` ← `sim`. `bbs` imports none of them.
+- `bbs` must not create randomness or read real time. Inject both.
+- Replica routing lives in `client/`, not in `bbs`. The board does not name replicas.
+- If reproducing an infrastructure anomaly requires changing the domain, the layer split is wrong.
+- Partitioning is an infrastructure policy, not a domain concept. The board is one board.
+
+## Experiments
+
+- Anomalies must emerge. Do not hand-place lag; only `sim.Advance` moves replication forward.
+- Countermeasures live in `client/router.go` and the session. They must be swappable so the same
+  invariant flips between fail and pass.
+- One RNG stream per layer (workload / delay / routing / fault). Never share one stream —
+  swapping a router must not perturb delays or workload.
+- Checkers read `bbs.Event` history only. Never widen the app to let a checker see ground truth.
+- Add a mechanism only when it lets a named invariant fail. Not because it exists in reality.
+
+## Phases
+
+- Phase 1: deterministic single-threaded simulation. Virtual clock, fixed seed.
+- Phase 2: real concurrency behind `client.Backend`. Keep timestamped history and fault-injection
+  seeds so failures stay analyzable. Move when the checker is calibrated, not on a schedule.
+
+## Style
+
 - Name tests after the anomaly or invariant they show (`ReadAfterWrite`, `MonotonicReads`).
-- Do not chase production quality: no connection pooling, retries, metrics, or "realistic" networking for its own sake.
+- Do not chase production quality: no connection pooling, metrics, or "realistic" networking
+  for its own sake.
 - Do not summarize book chapters in code comments. State only the experiment's contract.
