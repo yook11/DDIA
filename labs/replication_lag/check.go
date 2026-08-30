@@ -1,45 +1,42 @@
 package replicationlag
 
-import "fmt"
+import (
+	"fmt"
 
-type EventKind int
-
-const (
-	EventWrite EventKind = iota
-	EventRead
+	"ddia/bbs"
 )
 
-type Event struct {
-	Kind    EventKind
-	User    string
-	Comment Comment
-	Replica int
-	Visible []Comment
-}
-
-func checkReadAfterWrite(history []Event) error {
-	var mine []Comment
-	for _, e := range history {
-		switch e.Kind {
-		case EventWrite:
-			mine = append(mine, e.Comment)
-		case EventRead:
-			for _, w := range mine {
-				if w.User != e.User {
-					continue
-				}
-				if !containsComment(e.Visible, w) {
-					return fmt.Errorf("read-after-write: user %q wrote %q then read replica %d without it", e.User, w.Text, e.Replica)
-				}
+// checkReadAfterWrite は、同じ人が書いたレスが、その人が同じスレを開いたときに見えているか。
+// 履歴だけを見る。リーダーの真値は見ない。
+func checkReadAfterWrite(h []bbs.Event) error {
+	wrote := map[bbs.UserID][]bbs.Post{}
+	for _, e := range h {
+		if e.Phase != bbs.Ok {
+			continue
+		}
+		if e.Wrote != nil {
+			wrote[e.User] = append(wrote[e.User], *e.Wrote)
+			continue
+		}
+		if e.Op != "GET /threads/{t}" {
+			continue
+		}
+		for _, p := range wrote[e.User] {
+			if p.ThreadID != e.Thread {
+				continue
+			}
+			if !containsPost(e.Seen, p.ID) {
+				return fmt.Errorf("read-after-write: user %q が %q を書いたあと、スレ %q を開いても見えない",
+					e.User, p.Body, e.Thread)
 			}
 		}
 	}
 	return nil
 }
 
-func containsComment(list []Comment, want Comment) bool {
-	for _, c := range list {
-		if c == want {
+func containsPost(list []bbs.Post, id bbs.PostID) bool {
+	for _, p := range list {
+		if p.ID == id {
 			return true
 		}
 	}
