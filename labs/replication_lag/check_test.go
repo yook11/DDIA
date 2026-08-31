@@ -3,14 +3,14 @@ package replicationlag
 import (
 	"testing"
 
-	"ddia/bbs"
+	"ddia/app"
 )
 
 func TestReadAfterWriteDetectsMissing(t *testing.T) {
-	p := bbs.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
-	h := []bbs.Event{
-		{Phase: bbs.Ok, User: "alice", Wrote: &p},
-		{Phase: bbs.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t1"},
+	p := app.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
+	h := []app.Event{
+		{Phase: app.Ok, User: "alice", Wrote: &p},
+		{Phase: app.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t1"},
 	}
 	if err := checkReadAfterWrite(h); err == nil {
 		t.Fatal("自分のレスが見えない履歴を通してしまった")
@@ -18,10 +18,10 @@ func TestReadAfterWriteDetectsMissing(t *testing.T) {
 }
 
 func TestReadAfterWriteAcceptsVisible(t *testing.T) {
-	p := bbs.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
-	h := []bbs.Event{
-		{Phase: bbs.Ok, User: "alice", Wrote: &p},
-		{Phase: bbs.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t1", Seen: []bbs.Post{p}},
+	p := app.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
+	h := []app.Event{
+		{Phase: app.Ok, User: "alice", Wrote: &p},
+		{Phase: app.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t1", Seen: []app.Post{p}},
 	}
 	if err := checkReadAfterWrite(h); err != nil {
 		t.Fatal(err)
@@ -29,10 +29,10 @@ func TestReadAfterWriteAcceptsVisible(t *testing.T) {
 }
 
 func TestReadAfterWriteIgnoresOtherThread(t *testing.T) {
-	p := bbs.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
-	h := []bbs.Event{
-		{Phase: bbs.Ok, User: "alice", Wrote: &p},
-		{Phase: bbs.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t2"},
+	p := app.Post{ID: "p1", ThreadID: "t1", Author: "alice", Body: "hello"}
+	h := []app.Event{
+		{Phase: app.Ok, User: "alice", Wrote: &p},
+		{Phase: app.Ok, User: "alice", Op: "GET /threads/{t}", Thread: "t2"},
 	}
 	if err := checkReadAfterWrite(h); err != nil {
 		t.Fatal(err)
