@@ -1,4 +1,4 @@
-package bbs
+package app
 
 type Recorder struct{ events []Event }
 

@@ -6,33 +6,35 @@ alwaysApply: true
 # DDIA labs
 
 A lab for reproducing DDIA anomalies, not a production system.
-The bulletin board (`bbs/`) is the application. The client (`client/`) is the
-handle that picks replicas — present for both simulation and a real multi-node DB.
+The bulletin board (`app/`) is the application. `database/` decides final database
+locations, while `sim.Database` executes operations against the simulated cluster.
 Labs own only scenarios and invariant checks.
 
 ## Layers
 
-- Dependencies go one way: `bbs` ← `client` ← `sim` ← `labs`, and
-  `bbs` ← `store` ← `transport` ← `sim`. `bbs` imports none of them.
-- `bbs` must not create randomness or read real time. Inject both.
-- Replica routing lives in `client/`, not in `bbs`. The board does not name replicas.
+- Dependencies are acyclic: `database` imports `app`; `storage` imports `app` and
+  `database`; `transport` imports those lower-level types; `sim` composes them.
+- `app` must not create randomness or read real time. Inject both.
+- Routing lives in `database/`, not in `app`. The board does not name replicas.
+- `storage.Cluster` applies operations only to an explicit `Location`; it never selects one.
+- `transport.Transport` sends to one explicit destination; it never chooses replication targets.
 - If reproducing an infrastructure anomaly requires changing the domain, the layer split is wrong.
 - Partitioning is an infrastructure policy, not a domain concept. The board is one board.
 
 ## Experiments
 
 - Anomalies must emerge. Do not hand-place lag; only `sim.Advance` moves replication forward.
-- Countermeasures live in `client/router.go` and the session. They must be swappable so the same
+- Countermeasures live in `database/router.go` and the session. They must be swappable so the same
   invariant flips between fail and pass.
 - One RNG stream per layer (workload / delay / routing / fault). Never share one stream —
   swapping a router must not perturb delays or workload.
-- Checkers read `bbs.Event` history only. Never widen the app to let a checker see ground truth.
+- Checkers read `app.Event` history only. Never widen the app to let a checker see ground truth.
 - Add a mechanism only when it lets a named invariant fail. Not because it exists in reality.
 
 ## Phases
 
 - Phase 1: deterministic single-threaded simulation. Virtual clock, fixed seed.
-- Phase 2: real concurrency behind `client.Backend`. Keep timestamped history and fault-injection
+- Phase 2: real concurrency behind `app.Repository`. Keep timestamped history and fault-injection
   seeds so failures stay analyzable. Move when the checker is calibrated, not on a schedule.
 
 ## Style

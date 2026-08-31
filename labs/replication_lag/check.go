@@ -3,15 +3,15 @@ package replicationlag
 import (
 	"fmt"
 
-	"ddia/bbs"
+	"ddia/app"
 )
 
 // checkReadAfterWrite は、同じ人が書いたレスが、その人が同じスレを開いたときに見えているか。
 // 履歴だけを見る。リーダーの真値は見ない。
-func checkReadAfterWrite(h []bbs.Event) error {
-	wrote := map[bbs.UserID][]bbs.Post{}
+func checkReadAfterWrite(h []app.Event) error {
+	wrote := map[app.UserID][]app.Post{}
 	for _, e := range h {
-		if e.Phase != bbs.Ok {
+		if e.Phase != app.Ok {
 			continue
 		}
 		if e.Wrote != nil {
@@ -34,7 +34,7 @@ func checkReadAfterWrite(h []bbs.Event) error {
 	return nil
 }
 
-func containsPost(list []bbs.Post, id bbs.PostID) bool {
+func containsPost(list []app.Post, id app.PostID) bool {
 	for _, p := range list {
 		if p.ID == id {
 			return true
