@@ -6,36 +6,51 @@ alwaysApply: true
 # DDIA labs
 
 A lab for reproducing DDIA anomalies, not a production system.
-The bulletin board (`app/`) is the application. `database/` decides final database
-locations, while `sim.Database` executes operations against the simulated cluster.
+The bulletin board (`app/`) is the real application. Simulation-only code lives under
+`fake/`; `fake/database` models the cluster and `fake/simulator` executes experiments.
 Labs own only scenarios and invariant checks.
 
-## Layers
+## Simulation layers
 
-- Dependencies are acyclic: `database` imports `app`; `storage` imports `app` and
-  `database`; `transport` imports those lower-level types; `sim` composes them.
-- `app` must not create randomness or read real time. Inject both.
-- Routing lives in `database/`, not in `app`. The board does not name replicas.
-- `storage.Cluster` applies operations only to an explicit `Location`; it never selects one.
-- `transport.Transport` sends to one explicit destination; it never chooses replication targets.
+- Dependencies are acyclic: `fake/database` uses domain types from `app`,
+  `fake/transport` uses `fake/database`, and `fake/simulator` composes them.
+- Routing lives in `fake/database/`, not in `app`. The real board does not name fake replicas.
+- `fake/database.Cluster` applies operations only to an explicit `Location`; it never selects one.
+- `fake/transport.Transport` sends to one explicit destination; it never chooses replication targets.
 - If reproducing an infrastructure anomaly requires changing the domain, the layer split is wrong.
 - Partitioning is an infrastructure policy, not a domain concept. The board is one board.
 
-## Experiments
+## Simulation experiments
 
-- Anomalies must emerge. Do not hand-place lag; only `sim.Advance` moves replication forward.
-- Countermeasures live in `database/router.go` and the session. They must be swappable so the same
+- Anomalies must emerge. Do not hand-place lag; only `fake/simulator.Sim.Advance` moves replication forward.
+- Countermeasures live in `fake/database/router.go` and the fake session. They must be swappable so the same
   invariant flips between fail and pass.
 - One RNG stream per layer (workload / delay / routing / fault). Never share one stream —
   swapping a router must not perturb delays or workload.
-- Checkers read `app.Event` history only. Never widen the app to let a checker see ground truth.
+- Checkers read `fake/simulator.Event` history only. Never widen the real app to expose fake ground truth.
 - Add a mechanism only when it lets a named invariant fail. Not because it exists in reality.
 
 ## Phases
 
 - Phase 1: deterministic single-threaded simulation. Virtual clock, fixed seed.
-- Phase 2: real concurrency behind `app.Repository`. Keep timestamped history and fault-injection
+- Phase 2: real concurrency outside the fake packages. Keep timestamped history and fault-injection
   seeds so failures stay analyzable. Move when the checker is calibrated, not on a schedule.
+
+## Real PostgreSQL SQL lab
+
+- `infra/postgres/` and `labs/postgres_replication/` are a separate SQL-only lab.
+  Start with its README and `make db-up` / `make db-test`; do not require a Go build.
+- PostgreSQL owns physical replication; no simulated transport, virtual clock, or
+  partitioning. Intentional WAL replay pause/resume is the fault injection here.
+- Confirm actual `paused` state, compare replay LSN with the post-commit token,
+  and verify row visibility. Use bounded polling; SQL errors fail the test.
+- Always attempt to resume test-owned pauses on failure/interruption. Do not
+  undo pauses already present before a test. No concurrent replay-control tests.
+- Scope Docker commands to `ddia-replication-lag`, bind ports only to loopback,
+  and preserve data on normal shutdown. Credentials are public local-lab-only.
+- Never silently erase/reinitialize partial data or failed replication slots.
+  Document explicit reset of the three dedicated volumes; never use broad prune.
+- Real read routing is separate from `fake/database/router.go`.
 
 ## Style
 
