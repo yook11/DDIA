@@ -65,12 +65,13 @@ func run(ctx context.Context, getenv func(string) string) error {
 	users := user.NewService(user.NewRepository(primary))
 	threads := thread.NewService(thread.NewRepository(primary))
 	posts := post.NewService(post.NewRepository(primary))
+	handlers := httpapi.Handlers{
+		Users:   httpapi.NewUserHandler(users),
+		Threads: httpapi.NewThreadHandler(threads),
+		Posts:   httpapi.NewPostHandler(posts),
+	}
 	server := &http.Server{
-		Handler: httpapi.NewHandler(httpapi.Services{
-			Users:   users,
-			Threads: threads,
-			Posts:   posts,
-		}),
+		Handler:           httpapi.NewRouter(handlers),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	if err := ctx.Err(); err != nil {

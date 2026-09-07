@@ -31,6 +31,7 @@ func TestCreatePostReturnsCreatedJSON(t *testing.T) {
 		"/threads/12/posts",
 		strings.NewReader(`{"author_id":"7","body":" post body "}`),
 	)
+	request.SetPathValue("thread_id", "12")
 	called := false
 	posts := post.NewService(postRepositoryFunc(func(
 		ctx context.Context,
@@ -46,7 +47,7 @@ func TestCreatePostReturnsCreatedJSON(t *testing.T) {
 	}))
 	response := httptest.NewRecorder()
 
-	NewHandler(Services{Posts: posts}).ServeHTTP(response, request)
+	NewPostHandler(posts).Create(response, request)
 
 	if !called || response.Code != http.StatusCreated {
 		t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
@@ -81,10 +82,9 @@ func TestCreatePostRejectsInvalidJSONWithoutCallingService(t *testing.T) {
 			}))
 			response := httptest.NewRecorder()
 
-			NewHandler(Services{Posts: posts}).ServeHTTP(
-				response,
-				httptest.NewRequest(http.MethodPost, "/threads/12/posts", strings.NewReader(body)),
-			)
+			request := httptest.NewRequest(http.MethodPost, "/threads/12/posts", strings.NewReader(body))
+			request.SetPathValue("thread_id", "12")
+			NewPostHandler(posts).Create(response, request)
 
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body)
@@ -113,14 +113,13 @@ func TestCreatePostMapsErrorsWithoutExposingDetails(t *testing.T) {
 			}))
 			response := httptest.NewRecorder()
 
-			NewHandler(Services{Posts: posts}).ServeHTTP(
-				response,
-				httptest.NewRequest(
-					http.MethodPost,
-					"/threads/"+test.threadID+"/posts",
-					strings.NewReader(`{"author_id":"7","body":"post"}`),
-				),
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/threads/"+test.threadID+"/posts",
+				strings.NewReader(`{"author_id":"7","body":"post"}`),
 			)
+			request.SetPathValue("thread_id", test.threadID)
+			NewPostHandler(posts).Create(response, request)
 
 			if response.Code != test.status || strings.Contains(response.Body.String(), "private") {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body)

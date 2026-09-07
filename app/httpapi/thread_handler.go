@@ -8,7 +8,15 @@ import (
 	"ddia/app/user"
 )
 
-func (h *Handler) createThread(w http.ResponseWriter, r *http.Request) {
+type ThreadHandler struct {
+	service *thread.Service
+}
+
+func NewThreadHandler(service *thread.Service) *ThreadHandler {
+	return &ThreadHandler{service: service}
+}
+
+func (h *ThreadHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		AuthorID *string `json:"author_id"`
 		Title    *string `json:"title"`
@@ -21,7 +29,7 @@ func (h *Handler) createThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.threads.CreateThread(r.Context(), user.ID(*input.AuthorID), *input.Title)
+	created, err := h.service.CreateThread(r.Context(), user.ID(*input.AuthorID), *input.Title)
 	switch {
 	case errors.Is(err, thread.ErrInvalidAuthorID):
 		writeError(w, http.StatusBadRequest, "invalid author_id")

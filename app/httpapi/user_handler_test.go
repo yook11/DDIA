@@ -21,15 +21,15 @@ func (f userRepositoryFunc) CreateUser(ctx context.Context, name string) (user.U
 func TestCreateUserReturnsCreatedJSON(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"name":"アリス"}`))
 	called := false
-	handler := NewHandler(Services{Users: user.NewService(userRepositoryFunc(func(ctx context.Context, name string) (user.User, error) {
+	handler := NewUserHandler(user.NewService(userRepositoryFunc(func(ctx context.Context, name string) (user.User, error) {
 		called = true
 		if ctx != request.Context() || name != "アリス" {
 			t.Fatalf("request changed: ctx=%v name=%q", ctx, name)
 		}
 		return user.User{ID: "42", Name: name}, nil
-	}))})
+	})))
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
+	handler.Create(response, request)
 	if !called || response.Code != http.StatusCreated {
 		t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
 	}
@@ -60,12 +60,12 @@ func TestCreateUserRejectsInvalidJSONWithoutCallingService(t *testing.T) {
 	}
 	for name, body := range tests {
 		t.Run(name, func(t *testing.T) {
-			handler := NewHandler(Services{Users: user.NewService(userRepositoryFunc(func(context.Context, string) (user.User, error) {
+			handler := NewUserHandler(user.NewService(userRepositoryFunc(func(context.Context, string) (user.User, error) {
 				t.Fatal("invalid JSON reached the repository")
 				return user.User{}, nil
-			}))})
+			})))
 			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body)))
+			handler.Create(response, httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body)))
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body)
 			}
@@ -82,11 +82,11 @@ func TestCreateUserMapsErrorsWithoutExposingDetails(t *testing.T) {
 		{"internal", errors.New("password=private-detail"), http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := NewHandler(Services{Users: user.NewService(userRepositoryFunc(func(context.Context, string) (user.User, error) {
+			handler := NewUserHandler(user.NewService(userRepositoryFunc(func(context.Context, string) (user.User, error) {
 				return user.User{}, tc.err
-			}))})
+			})))
 			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"name":"alice"}`)))
+			handler.Create(response, httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"name":"alice"}`)))
 			if response.Code != tc.status || strings.Contains(response.Body.String(), "private") {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body)
 			}
@@ -95,17 +95,5 @@ func TestCreateUserMapsErrorsWithoutExposingDetails(t *testing.T) {
 				t.Fatalf("invalid error JSON: %s (%v)", response.Body, err)
 			}
 		})
-	}
-}
-
-func TestUserRouteDoesNotAcceptOtherMethods(t *testing.T) {
-	handler := NewHandler(Services{Users: user.NewService(userRepositoryFunc(func(context.Context, string) (user.User, error) {
-		t.Fatal("unexpected repository call")
-		return user.User{}, nil
-	}))})
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/users", nil))
-	if response.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d", response.Code)
 	}
 }

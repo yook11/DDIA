@@ -6,7 +6,15 @@ import (
 	"ddia/app/user"
 )
 
-func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+type UserHandler struct {
+	service *user.Service
+}
+
+func NewUserHandler(service *user.Service) *UserHandler {
+	return &UserHandler{service: service}
+}
+
+func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name *string `json:"name"`
 	}
@@ -18,7 +26,7 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.users.CreateUser(r.Context(), *input.Name)
+	created, err := h.service.CreateUser(r.Context(), *input.Name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
