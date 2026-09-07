@@ -9,7 +9,15 @@ import (
 	"ddia/app/user"
 )
 
-func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
+type PostHandler struct {
+	service *post.Service
+}
+
+func NewPostHandler(service *post.Service) *PostHandler {
+	return &PostHandler{service: service}
+}
+
+func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		AuthorID *string `json:"author_id"`
 		Body     *string `json:"body"`
@@ -22,7 +30,7 @@ func (h *Handler) createPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.posts.CreatePost(
+	created, err := h.service.CreatePost(
 		r.Context(),
 		thread.ID(r.PathValue("thread_id")),
 		user.ID(*input.AuthorID),

@@ -43,7 +43,7 @@ func TestCreateThreadReturnsCreatedJSON(t *testing.T) {
 	}))
 	response := httptest.NewRecorder()
 
-	NewHandler(Services{Threads: threads}).ServeHTTP(response, request)
+	NewThreadHandler(threads).Create(response, request)
 
 	if !called || response.Code != http.StatusCreated {
 		t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
@@ -77,7 +77,7 @@ func TestCreateThreadRejectsInvalidJSONWithoutCallingService(t *testing.T) {
 			}))
 			response := httptest.NewRecorder()
 
-			NewHandler(Services{Threads: threads}).ServeHTTP(
+			NewThreadHandler(threads).Create(
 				response,
 				httptest.NewRequest(http.MethodPost, "/threads", strings.NewReader(body)),
 			)
@@ -106,7 +106,7 @@ func TestCreateThreadMapsErrorsWithoutExposingDetails(t *testing.T) {
 			}))
 			response := httptest.NewRecorder()
 
-			NewHandler(Services{Threads: threads}).ServeHTTP(
+			NewThreadHandler(threads).Create(
 				response,
 				httptest.NewRequest(http.MethodPost, "/threads", strings.NewReader(`{"author_id":"7","title":"thread"}`)),
 			)
