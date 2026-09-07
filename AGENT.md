@@ -9,8 +9,22 @@ DDIA を理解するための学習用実装。
 - ただテストを通して満足するのではなく、本質的な対策を考える。
 - 私が書いたコードのレビューと、期待と違う挙動の原因調査は歓迎。
 
-- `app.Application` の動きを変えず、`app.Repository` の実装をシミュレーション用DBと将来の実DBで差し替えられるようにする
-- `database.Router` は最終的な `Location`、`database.Replicator` は複製先を決める。読み書きや配送は実行しない
-- `storage.Cluster` は指定された `Location` へ保存・適用するだけで、パーティションを選ばない
-- `transport.Transport` は指定された1宛先へ配送するだけで、Broadcastや複製先選択を行わない
-- ユーザー操作は `app`、決定的なDB実行、配送適用、仮想時計は `sim` に置く
+## シミュレーションの境界
+
+- シミュレーション固有の処理は `fake/` に閉じ、実アプリの `app/` に仮想時計や偽DBを持ち込まない
+- `fake/database.Router` は最終的な `Location`、`fake/database.Replicator` は複製先を決める
+- `fake/database.Cluster` は指定された `Location` へ保存・適用するだけで、パーティションを選ばない
+- `fake/transport.Transport` は指定された1宛先へ配送するだけで、Broadcastや複製先選択を行わない
+- 決定的なDB実行、配送適用、仮想時計は `fake/simulator` に置く
+
+## 実PostgreSQLのSQLラボ
+
+- 入口は `labs/postgres_replication/README.md`、環境は `infra/postgres/`。`make db-up` / `make db-test` で実行する。
+- 掲示板のDDLは `infra/postgres/migrations/` に置き、管理者でprimaryだけへ `make db-migrate` を適用する。`make db-board-test` で検証する。初回起動も同じSQLを使う。
+- `board` は掲示板用、`lab` は複製実験用。適用済みマイグレーションを書き換えたり、テーブル追加のために既存ボリュームを消したりしない。
+- 現在はDBとSQLだけ。Go接続や掲示板の変更は別段階とし、編集中のGoコードがビルドできなくてもDB実験を行える状態を保つ。
+- 複製はPostgreSQLが実行する。`fake/` の仮想時計・配送・乱数ストリームはこのラボに適用しない。
+- 再現性のためにWAL適用停止・再開を使う。停止要求だけでなく実際の `paused` を確認し、LSNと投稿の可視性を期限付きで確認する。
+- 自動検証はSQLエラーで失敗し、自分が停止したレプリカの再開を終了・中断時にも試みる。他者の停止状態を勝手に変更しない。
+- Docker操作は `ddia-replication-lag` に限定する。公開はlocalhostのみ。学習用資格情報を実データには使用しない。
+- 通常の停止はデータ保持。不完全な初期化やスロット失効でデータを自動削除・再作成しない。明示的なリセットは文書に示した専用3ボリュームだけを対象にする。
