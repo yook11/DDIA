@@ -84,10 +84,13 @@ func (*ReadYourWritesRouter) RouteRead(
 	required Position,
 	topology Topology,
 ) Location {
-	return Location{
-	Partition : partition
-	Node : 0
+	for node := 1; node < topology.Replicas(); node++ {
+		location := Location{Partition: partition, Node: NodeID(node)}
+		if topology.Applied(location) >= required {
+			return location
+		}
 	}
+	return Location{Partition: partition, Node: 0}
 }
 
 var (
