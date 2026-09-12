@@ -22,16 +22,21 @@ import (
 
 type config struct {
 	primaryURL string
+	replicaURL string
 	httpAddr   string
 }
 
 func readConfig(getenv func(string) string) (config, error) {
 	cfg := config{
 		primaryURL: strings.TrimSpace(getenv("PRIMARY_DATABASE_URL")),
+		replicaURL: strings.TrimSpace(getenv("REPLICA_DATABASE_URL")),
 		httpAddr:   strings.TrimSpace(getenv("HTTP_ADDR")),
 	}
 	if cfg.primaryURL == "" {
 		return config{}, errors.New("PRIMARY_DATABASE_URL is required")
+	}
+	if cfg.replicaURL == "" {
+		return config{}, errors.New("REPLICA_DATABASE_URL is required")
 	}
 	if cfg.httpAddr == "" {
 		cfg.httpAddr = "127.0.0.1:18080"
@@ -62,8 +67,19 @@ func run(ctx context.Context, getenv func(string) string) error {
 	}
 	defer primary.Close()
 
+	replicaCtx, cancelReplica := context.WithTimeout(ctx, 5*time.Second)
+	replica, err := postgres.OpenReplica(replicaCtx, cfg.replicaURL)
+	cancelReplica()
+	if err != nil {
+		return err
+	}
+	defer replica.Close()
+
+	router := postgres.NewRouter(primary, replica)
+	threadRepository := thread.NewRepository(router)
+	threads := thread.NewService(threadRepository)
+
 	users := user.NewService(user.NewRepository(primary))
-	threads := thread.NewService(thread.NewRepository(primary))
 	posts := post.NewService(post.NewRepository(primary))
 	handlers := httpapi.Handlers{
 		Users:   httpapi.NewUserHandler(users),
