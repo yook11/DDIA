@@ -78,7 +78,10 @@ func (r *repository) GetThread(
 		return View{}, ErrInvalidThreadID
 	}
 
-	readPool := r.router.ReadPool(policy)
+	readPool, err := r.router.ReadPool(ctx, policy)
+	if err != nil {
+		return View{}, err
+	}
 	thread, err := fetchThread(ctx, readPool, threadNumber)
 	if err != nil {
 		return View{}, err
