@@ -18,6 +18,8 @@ import (
 	"ddia/app/thread"
 	"ddia/app/user"
 	"ddia/postgres"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type config struct {
@@ -75,7 +77,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	}
 	defer replica.Close()
 
-	router := postgres.NewRouter(primary, replica)
+	router := postgres.NewRouter(primary, []*pgxpool.Pool{replica})
 	threadRepository := thread.NewRepository(router)
 	threads := thread.NewService(threadRepository)
 
