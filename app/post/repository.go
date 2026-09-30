@@ -57,16 +57,7 @@ func (r *repository) CreatePost(
 		RETURNING id, thread_id, author_id, body
 	`, threadNumber, authorNumber, body).Scan(&id, &storedThreadID, &storedAuthorID, &storedBody)
 	if err != nil {
-		var postgresError *pgconn.PgError
-		if errors.As(err, &postgresError) && postgresError.Code == "23503" {
-			switch postgresError.ConstraintName {
-			case "posts_thread_id_fkey":
-				return Post{}, ErrThreadNotFound
-			case "posts_author_id_fkey":
-				return Post{}, ErrAuthorNotFound
-			}
-		}
-		return Post{}, fmt.Errorf("create post: %w", err)
+		return Post{}, mapCreatePostError(err)
 	}
 
 	return Post{
@@ -76,6 +67,19 @@ func (r *repository) CreatePost(
 		Body:     storedBody,
 		ReplyTo:  nil,
 	}, nil
+}
+
+func mapCreatePostError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23503" {
+		switch postgresError.ConstraintName {
+		case "posts_thread_id_fkey":
+			return ErrThreadNotFound
+		case "posts_author_id_fkey":
+			return ErrAuthorNotFound
+		}
+	}
+	return fmt.Errorf("create post: %w", err)
 }
 
 var _ Repository = (*repository)(nil)

@@ -36,10 +36,11 @@ func (r *Router) ReadPool(
 		}
 		return r.primary, nil
 
+	case readpolicy.PrimaryOnly:
+		return r.primary, nil
+
 	case readpolicy.ReadYourWrites:
-		if p.WritePosition == "" {
-			return r.primary, nil
-		}
+
 		for _, replica := range r.replica {
 			caughtUp, err := r.replicaCaughtUp(ctx, replica, p.WritePosition)
 			if err != nil {
