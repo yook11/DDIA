@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 
 	"ddia/app/thread"
 	"ddia/app/user"
+	"ddia/postgres"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -21,15 +22,15 @@ var (
 )
 
 type Repository interface {
-	CreatePost(ctx context.Context, threadID thread.ID, authorID user.ID, body string) (Post, error)
+	CreatePost(ctx context.Context, threadID thread.ID, authorID user.ID, body string) (WriteResult, error)
 }
 
 type repository struct {
-	primary *pgxpool.Pool
+	router *postgres.Router
 }
 
-func NewRepository(primary *pgxpool.Pool) Repository {
-	return &repository{primary: primary}
+func NewRepository(router *postgres.Router) Repository {
+	return &repository{router: router}
 }
 
 func (r *repository) CreatePost(
@@ -37,35 +38,46 @@ func (r *repository) CreatePost(
 	threadID thread.ID,
 	authorID user.ID,
 	body string,
-) (Post, error) {
+) (WriteResult, error) {
 	threadNumber, err := strconv.ParseInt(string(threadID), 10, 64)
 	if err != nil || threadNumber <= 0 {
-		return Post{}, ErrInvalidThreadID
+		return WriteResult{}, ErrInvalidThreadID
 	}
 	authorNumber, err := strconv.ParseInt(string(authorID), 10, 64)
 	if err != nil || authorNumber <= 0 {
-		return Post{}, ErrInvalidAuthorID
+		return WriteResult{}, ErrInvalidAuthorID
 	}
 
 	var id int64
 	var storedThreadID int64
 	var storedAuthorID int64
 	var storedBody string
-	err = r.primary.QueryRow(ctx, `
+
+	writePool := r.router.WritePool()
+	err = writePool.QueryRow(ctx, `
 		INSERT INTO board.posts (thread_id, author_id, body)
 		VALUES ($1, $2, $3)
 		RETURNING id, thread_id, author_id, body
 	`, threadNumber, authorNumber, body).Scan(&id, &storedThreadID, &storedAuthorID, &storedBody)
 	if err != nil {
-		return Post{}, mapCreatePostError(err)
+		return WriteResult{}, mapCreatePostError(err)
 	}
 
-	return Post{
-		ID:       ID(strconv.FormatInt(id, 10)),
-		ThreadID: thread.ID(strconv.FormatInt(storedThreadID, 10)),
-		AuthorID: user.ID(strconv.FormatInt(storedAuthorID, 10)),
-		Body:     storedBody,
-		ReplyTo:  nil,
+	position, err := postgres.CurrentPosition(ctx, writePool)
+	if err != nil {
+		log.Printf("create post %d: position unavailable: %v", id, err)
+		position = ""
+	}
+
+	return WriteResult{
+		Post: Post{
+			ID:       ID(strconv.FormatInt(id, 10)),
+			ThreadID: thread.ID(strconv.FormatInt(storedThreadID, 10)),
+			AuthorID: user.ID(strconv.FormatInt(storedAuthorID, 10)),
+			Body:     storedBody,
+			ReplyTo:  nil,
+		},
+		Position: position,
 	}, nil
 }
 

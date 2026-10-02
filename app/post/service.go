@@ -20,6 +20,6 @@ func (s *Service) CreatePost(
 	threadID thread.ID,
 	authorID user.ID,
 	body string,
-) (Post, error) {
+) (WriteResult, error) {
 	return s.repository.CreatePost(ctx, threadID, authorID, body)
 }

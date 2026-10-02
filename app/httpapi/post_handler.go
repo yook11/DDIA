@@ -54,6 +54,10 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if created.Position != "" {
+		w.Header().Set(writePositionHeader, string(created.Position))
+	}
+
 	writeJSON(w, http.StatusCreated, struct {
 		ID       post.ID   `json:"id"`
 		ThreadID thread.ID `json:"thread_id"`
@@ -61,10 +65,10 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Body     string    `json:"body"`
 		ReplyTo  *post.ID  `json:"reply_to"`
 	}{
-		ID:       created.ID,
-		ThreadID: created.ThreadID,
-		AuthorID: created.AuthorID,
-		Body:     created.Body,
-		ReplyTo:  created.ReplyTo,
+		ID:       created.Post.ID,
+		ThreadID: created.Post.ThreadID,
+		AuthorID: created.Post.AuthorID,
+		Body:     created.Post.Body,
+		ReplyTo:  created.Post.ReplyTo,
 	})
 }

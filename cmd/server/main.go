@@ -82,7 +82,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	threads := thread.NewService(threadRepository)
 
 	users := user.NewService(user.NewRepository(primary))
-	posts := post.NewService(post.NewRepository(primary))
+	posts := post.NewService(post.NewRepository(router))
 	handlers := httpapi.Handlers{
 		Users:   httpapi.NewUserHandler(users),
 		Threads: httpapi.NewThreadHandler(threads),

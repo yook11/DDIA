@@ -58,7 +58,7 @@ func (h *ThreadHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if created.Position != "" {
-		w.Header().Set("X-Write-Position", string(created.Position))
+		w.Header().Set(writePositionHeader, string(created.Position))
 	}
 
 	writeJSON(w, http.StatusCreated, struct {
