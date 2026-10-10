@@ -23,22 +23,27 @@ import (
 )
 
 type config struct {
-	primaryURL string
-	replicaURL string
-	httpAddr   string
+	primaryURL  string
+	replicaURLs []string
+	httpAddr    string
 }
 
 func readConfig(getenv func(string) string) (config, error) {
 	cfg := config{
 		primaryURL: strings.TrimSpace(getenv("PRIMARY_DATABASE_URL")),
-		replicaURL: strings.TrimSpace(getenv("REPLICA_DATABASE_URL")),
 		httpAddr:   strings.TrimSpace(getenv("HTTP_ADDR")),
 	}
 	if cfg.primaryURL == "" {
 		return config{}, errors.New("PRIMARY_DATABASE_URL is required")
 	}
-	if cfg.replicaURL == "" {
-		return config{}, errors.New("REPLICA_DATABASE_URL is required")
+
+	for _, row := range strings.Split(getenv("REPLICA_DATABASE_URLS"), ",") {
+		if url := strings.TrimSpace(row); url != "" {
+			cfg.replicaURLs = append(cfg.replicaURLs, url)
+		}
+	}
+	if len(cfg.replicaURLs) == 0 {
+		return config{}, errors.New("REPLICA_DATABASE_URLS is required")
 	}
 	if cfg.httpAddr == "" {
 		cfg.httpAddr = "127.0.0.1:18080"
@@ -69,15 +74,19 @@ func run(ctx context.Context, getenv func(string) string) error {
 	}
 	defer primary.Close()
 
-	replicaCtx, cancelReplica := context.WithTimeout(ctx, 5*time.Second)
-	replica, err := postgres.OpenReplica(replicaCtx, cfg.replicaURL)
-	cancelReplica()
-	if err != nil {
-		return err
+	replicas := make([]*pgxpool.Pool, 0, len(cfg.replicaURLs))
+	for _, url := range cfg.replicaURLs {
+		replicaCtx, cancelReplica := context.WithTimeout(ctx, 5*time.Second)
+		replica, err := postgres.OpenReplica(replicaCtx, url)
+		cancelReplica()
+		if err != nil {
+			return err
+		}
+		defer replica.Close()
+		replicas = append(replicas, replica)
 	}
-	defer replica.Close()
 
-	router := postgres.NewRouter(primary, []*pgxpool.Pool{replica})
+	router := postgres.NewRouter(primary, replicas)
 	threadRepository := thread.NewRepository(router)
 	threads := thread.NewService(threadRepository)
 
