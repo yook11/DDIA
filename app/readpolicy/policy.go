@@ -14,5 +14,8 @@ type ReadYourWrites struct {
 }
 type Eventual struct{}
 
+type PrimaryOnly struct{}
+
 func (ReadYourWrites) isReadPolicy() {}
 func (Eventual) isReadPolicy()       {}
+func (PrimaryOnly) isReadPolicy()    {}

@@ -57,17 +57,23 @@ func (h *ThreadHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if created.Position != "" {
+		w.Header().Set(writePositionHeader, string(created.Position))
+	}
+
 	writeJSON(w, http.StatusCreated, struct {
 		ID       thread.ID `json:"id"`
 		AuthorID user.ID   `json:"author_id"`
 		Title    string    `json:"title"`
-	}{ID: created.ID, AuthorID: created.AuthorID, Title: created.Title})
+	}{ID: created.Thread.ID, AuthorID: created.Thread.AuthorID, Title: created.Thread.Title})
 }
 
 func (h *ThreadHandler) Get(w http.ResponseWriter, r *http.Request) {
 	threadID := thread.ID(r.PathValue("thread_id"))
 
-	result, err := h.service.GetThread(r.Context(), threadID)
+	policy := readPolicyFromRequest(r)
+
+	result, err := h.service.GetThread(r.Context(), threadID, policy)
 
 	switch {
 	case errors.Is(err, thread.ErrInvalidThreadID):

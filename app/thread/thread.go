@@ -1,6 +1,9 @@
 package thread
 
-import "ddia/app/user"
+import (
+	"ddia/app/readpolicy"
+	"ddia/app/user"
+)
 
 type ID string
 
@@ -10,7 +13,6 @@ type Thread struct {
 	AuthorID user.ID
 }
 
-// View is the result shown when a thread and its posts are read together.
 type View struct {
 	Thread Thread
 	Posts  []ThreadPost
@@ -24,4 +26,10 @@ type ThreadPost struct {
 	AuthorID user.ID
 	Body     string
 	ReplyTo  *PostID
+}
+
+// 書き込みの結果
+type WriteResult struct {
+	Thread   Thread
+	Position readpolicy.Position
 }

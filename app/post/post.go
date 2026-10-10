@@ -1,11 +1,17 @@
 package post
 
 import (
+	"ddia/app/readpolicy"
 	"ddia/app/thread"
 	"ddia/app/user"
 )
 
 type ID string
+
+type WriteResult struct {
+	Post     Post
+	Position readpolicy.Position
+}
 
 type Post struct {
 	ID       ID

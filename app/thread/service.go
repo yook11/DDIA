@@ -15,13 +15,14 @@ func NewService(repository Repository) *Service {
 	return &Service{repository: repository}
 }
 
-func (s *Service) CreateThread(ctx context.Context, authorID user.ID, title string) (Thread, error) {
+func (s *Service) CreateThread(ctx context.Context, authorID user.ID, title string) (WriteResult, error) {
 	return s.repository.CreateThread(ctx, authorID, title)
 }
 
 func (s *Service) GetThread(
 	ctx context.Context,
 	threadID ID,
+	policy readpolicy.Policy,
 ) (View, error) {
-	return s.repository.GetThread(ctx, threadID, readpolicy.ReadYourWrites{})
+	return s.repository.GetThread(ctx, threadID, policy)
 }

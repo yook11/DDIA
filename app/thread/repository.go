@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 
 	"ddia/app/readpolicy"
@@ -24,7 +25,7 @@ var (
 )
 
 type Repository interface {
-	CreateThread(ctx context.Context, authorID user.ID, title string) (Thread, error)
+	CreateThread(ctx context.Context, authorID user.ID, title string) (WriteResult, error)
 	GetThread(ctx context.Context, threadID ID, policy readpolicy.Policy) (View, error)
 }
 
@@ -36,10 +37,10 @@ func NewRepository(router *postgres.Router) Repository {
 	return &repository{router: router}
 }
 
-func (r *repository) CreateThread(ctx context.Context, authorID user.ID, title string) (Thread, error) {
+func (r *repository) CreateThread(ctx context.Context, authorID user.ID, title string) (WriteResult, error) {
 	authorNumber, err := strconv.ParseInt(string(authorID), 10, 64)
 	if err != nil || authorNumber <= 0 {
-		return Thread{}, ErrInvalidAuthorID
+		return WriteResult{}, ErrInvalidAuthorID
 	}
 
 	var id int64
@@ -52,19 +53,22 @@ func (r *repository) CreateThread(ctx context.Context, authorID user.ID, title s
 		RETURNING id, author_id, title
 	`, authorNumber, title).Scan(&id, &storedAuthorID, &storedTitle)
 	if err != nil {
-		var postgresError *pgconn.PgError
-		if errors.As(err, &postgresError) &&
-			postgresError.Code == "23503" &&
-			postgresError.ConstraintName == "threads_author_id_fkey" {
-			return Thread{}, ErrAuthorNotFound
-		}
-		return Thread{}, fmt.Errorf("create thread: %w", err)
+		return WriteResult{}, mapCreateThreadError(err)
 	}
 
-	return Thread{
-		ID:       ID(strconv.FormatInt(id, 10)),
-		Title:    storedTitle,
-		AuthorID: user.ID(strconv.FormatInt(storedAuthorID, 10)),
+	position, err := postgres.CurrentPosition(ctx, writePool)
+	if err != nil {
+		log.Printf("create thread %d: position unavailable: %v", id, err)
+		position = ""
+	}
+
+	return WriteResult{
+		Thread: Thread{
+			ID:       ID(strconv.FormatInt(id, 10)),
+			Title:    storedTitle,
+			AuthorID: user.ID(strconv.FormatInt(storedAuthorID, 10)),
+		},
+		Position: position,
 	}, nil
 }
 
@@ -93,6 +97,16 @@ func (r *repository) GetThread(
 	}
 
 	return View{Thread: thread, Posts: posts}, nil
+}
+
+func mapCreateThreadError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) &&
+		postgresError.Code == "23503" &&
+		postgresError.ConstraintName == "threads_author_id_fkey" {
+		return ErrAuthorNotFound
+	}
+	return fmt.Errorf("create thread: %w", err)
 }
 
 func fetchThread(ctx context.Context, readPool *pgxpool.Pool, threadNumber int64) (Thread, error) {
