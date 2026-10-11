@@ -2,6 +2,10 @@ name: ddia-replication-lag
 
 x-postgres: &postgres
   image: postgres:18.6-bookworm
+  # Fixed per-node resources so that write-load results are comparable between runs,
+  # and so that adding a node later adds capacity instead of sharing the whole VM.
+  cpus: 2
+  mem_limit: 1g
   environment: &environment
     PGDATA: /var/lib/postgresql/18/docker
     POSTGRES_DB: ddia
@@ -25,8 +29,11 @@ x-postgres: &postgres
     - max_wal_senders=10
     - -c
     - max_replication_slots=2
+    # Write-load runs produce WAL faster than a lagging replica replays it.
     - -c
-    - max_slot_wal_keep_size=256MB
+    - max_slot_wal_keep_size=2GB
+    - -c
+    - track_wal_io_timing=on
     - -c
     - synchronous_commit=on
     - -c
@@ -84,6 +91,22 @@ services:
       - replica2-data:/var/lib/postgresql
       - .:/opt/ddia:ro
       - ../../labs/postgres_replication:/opt/ddia-lab:ro
+
+  # Write-load generator inside the Compose network, so that host-to-VM port forwarding
+  # is not part of the measured path. Started only by labs/postgres_write_load/run.sh.
+  # The PostgreSQL image is reused only as a Linux runtime for the prebuilt Go binary.
+  loadgen:
+    profiles: [load]
+    image: postgres:18.6-bookworm
+    cpus: 4
+    mem_limit: 1g
+    entrypoint: [/opt/loadgen/loadgen]
+    environment:
+      PRIMARY_DATABASE_URL: postgres://ddia_app:ddia_local_app@primary:5432/ddia?sslmode=disable
+      ADMIN_DATABASE_URL: postgres://ddia_admin:ddia_local_admin@primary:5432/ddia?sslmode=disable
+    volumes:
+      - ../../labs/postgres_write_load/bin:/opt/loadgen:ro
+      - ../../labs/postgres_write_load/results:/results
 
 volumes:
   primary-data:

@@ -24,3 +24,6 @@ go.work.sum
 # OS / editor
 .DS_Store
 *.log
+
+# Write-load results
+labs/postgres_write_load/results/

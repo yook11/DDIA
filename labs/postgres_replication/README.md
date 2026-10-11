@@ -211,7 +211,7 @@ docker compose --project-name ddia-replication-lag --file infra/postgres/compose
 ```
 
 WAL適用を長時間停止したまま書き込みを続けると、特にレプリカ側で未適用WALが蓄積する。
-スロット保持の `max_slot_wal_keep_size=256MB` はディスク全体の厳密な上限ではない。
+スロット保持の `max_slot_wal_keep_size=2GB` はディスク全体の厳密な上限ではない（書き込み負荷の実験のため256MBから拡大）。
 チェックポイント時に必要WALが削除されてスロットが使えなくなると、再開だけでは復旧せず再構築が必要になる場合がある。
 実験後は早めに再開するか、環境全体を `db-down` で停止する。
 [スロットとWAL保持の設定](https://www.postgresql.org/docs/18/runtime-config-replication.html)
