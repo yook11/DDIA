@@ -11,6 +11,7 @@ import (
 	"ddia/app/user"
 	"ddia/postgres"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -52,15 +53,42 @@ func (r *repository) CreatePost(
 	var storedThreadID int64
 	var storedAuthorID int64
 	var storedBody string
+	var storedNumber int
 
 	writePool := r.router.WritePool()
-	err = writePool.QueryRow(ctx, `
-		INSERT INTO board.posts (thread_id, author_id, body)
-		VALUES ($1, $2, $3)
-		RETURNING id, thread_id, author_id, body
-	`, threadNumber, authorNumber, body).Scan(&id, &storedThreadID, &storedAuthorID, &storedBody)
+	tx, err := writePool.Begin(ctx)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("create post: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// スレッドの行で採番する。同じスレッドへの投稿は、この行のロックによりコミットまで直列になる。
+	var number int
+	err = tx.QueryRow(ctx, `
+		UPDATE board.threads
+		SET post_count = post_count + 1
+		WHERE id = $1
+		RETURNING post_count
+	`, threadNumber).Scan(&number)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return WriteResult{}, ErrThreadNotFound
+	}
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("create post: %w", err)
+	}
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO board.posts (thread_id, author_id, body, post_number)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, thread_id, author_id, body, post_number
+	`, threadNumber, authorNumber, body, number).Scan(
+		&id, &storedThreadID, &storedAuthorID, &storedBody, &storedNumber,
+	)
 	if err != nil {
 		return WriteResult{}, mapCreatePostError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return WriteResult{}, fmt.Errorf("create post: %w", err)
 	}
 
 	position, err := postgres.CurrentPosition(ctx, writePool)
@@ -75,6 +103,7 @@ func (r *repository) CreatePost(
 			ThreadID: thread.ID(strconv.FormatInt(storedThreadID, 10)),
 			AuthorID: user.ID(strconv.FormatInt(storedAuthorID, 10)),
 			Body:     storedBody,
+			Number:   storedNumber,
 			ReplyTo:  nil,
 		},
 		Position: position,

@@ -25,6 +25,7 @@ type ThreadPost struct {
 	ThreadID ID
 	AuthorID user.ID
 	Body     string
+	Number   int
 	ReplyTo  *PostID
 }
 

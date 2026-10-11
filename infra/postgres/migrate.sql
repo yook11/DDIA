@@ -19,4 +19,14 @@ SELECT EXISTS (
     \ir migrations/001_board.sql
     INSERT INTO ddia_migrations.applied (version) VALUES ('001_board');
 \endif
+
+SELECT EXISTS (
+    SELECT 1 FROM ddia_migrations.applied WHERE version = '002_post_number'
+) AS post_number_applied \gset
+\if :post_number_applied
+    \echo '002_post_number already applied; existing tables and data are unchanged.'
+\else
+    \ir migrations/002_post_number.sql
+    INSERT INTO ddia_migrations.applied (version) VALUES ('002_post_number');
+\endif
 COMMIT;

@@ -63,12 +63,14 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ThreadID thread.ID `json:"thread_id"`
 		AuthorID user.ID   `json:"author_id"`
 		Body     string    `json:"body"`
+		Number   int       `json:"number"`
 		ReplyTo  *post.ID  `json:"reply_to"`
 	}{
 		ID:       created.Post.ID,
 		ThreadID: created.Post.ThreadID,
 		AuthorID: created.Post.AuthorID,
 		Body:     created.Post.Body,
+		Number:   created.Post.Number,
 		ReplyTo:  created.Post.ReplyTo,
 	})
 }

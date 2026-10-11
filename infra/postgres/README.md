@@ -1,7 +1,8 @@
 # PostgreSQLの環境と掲示板テーブル
 
 環境は `compose.yaml`、掲示板のテーブル定義は
-[`migrations/001_board.sql`](migrations/001_board.sql) にある。
+[`migrations/001_board.sql`](migrations/001_board.sql) と
+[`migrations/002_post_number.sql`](migrations/002_post_number.sql)（レス番号）にある。
 レプリケーションの実験手順は [SQLラボ](../../labs/postgres_replication/README.md) を参照。
 
 ## テーブルを作成・確認する
@@ -36,8 +37,8 @@ psqlでテーブルと定義を確認できる。
 | テーブル | 列 |
 |---|---|
 | `board.users` | `id`, `name`, `created_at` |
-| `board.threads` | `id`, `title`, `author_id`, `created_at` |
-| `board.posts` | `id`, `thread_id`, `author_id`, `body`, `reply_to`, `created_at` |
+| `board.threads` | `id`, `title`, `author_id`, `created_at`, `post_count` |
+| `board.posts` | `id`, `thread_id`, `author_id`, `body`, `reply_to`, `created_at`, `post_number` |
 
 - 全IDは `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`。INSERT時にDBが採番し、`RETURNING id` で受け取る。
 - `author_id` は `users.id`、`thread_id` は `threads.id`、`reply_to` は `posts.id` を参照する。
@@ -46,6 +47,9 @@ psqlでテーブルと定義を確認できる。
 - 返信先の存在を保証するが、同じスレッドへの返信に限定する追加ルールは設けていない。
 - `created_at` はタイムゾーン付きの作成時刻。`posts(thread_id, id)` にスレッド単位の取得用インデックスがある。
 - IDは投稿の識別子であり、連続性やコミット順を表さない。ロールバックでも番号が消費される。時刻やIDをLSNの代わりに反映確認へ使わない。
+- `post_number` はスレッド内の連番（レス番号）で、`(thread_id, post_number)` は一意。アプリは投稿のトランザクションで
+  `threads.post_count` を1増やした値を使う。同じスレッドへの投稿はこの行のロックでコミットまで直列になる。
+  002の適用時に既存の投稿へID順で番号を振り、各スレッドの `post_count` に件数を入れた。
 
 DDLと適用履歴は `ddia_admin` が所有する。`ddia_app` は掲示板データのSELECT/INSERT/UPDATE/DELETEと採番を利用できるが、テーブル作成や変更はできない。
 
@@ -62,8 +66,11 @@ VALUES ('alice') RETURNING id AS user_id \gset
 INSERT INTO board.threads (title, author_id)
 VALUES ('最初のスレッド', :user_id) RETURNING id AS thread_id \gset
 
-INSERT INTO board.posts (thread_id, author_id, body)
-VALUES (:thread_id, :user_id, 'こんにちは') RETURNING id AS post_id \gset
+UPDATE board.threads SET post_count = post_count + 1
+WHERE id = :thread_id RETURNING post_count AS post_number \gset
+
+INSERT INTO board.posts (thread_id, author_id, body, post_number)
+VALUES (:thread_id, :user_id, 'こんにちは', :post_number) RETURNING id AS post_id \gset
 COMMIT;
 
 SELECT p.id, t.title, u.name, p.body
@@ -83,7 +90,7 @@ WHERE p.id = :post_id;
 適用済みの `001_board` は再実行してもスキップし、テーブルやデータを上書きしない。
 履歴なしに同名の `board` スキーマがある場合はエラーで停止する。既存データを消して強制適用しない。
 
-今後定義を変更する場合は、適用済みの `001_board.sql` を書き換えず、次のSQLと適用処理を追加する。
+今後定義を変更する場合は、適用済みのSQLを書き換えず、次のSQLと適用処理を追加する（`002_post_number` はこの方法で追加した）。
 通常の `db-down` はデータ保持。テーブル追加のためにボリューム削除・再初期化は不要。
 
 `make db-board-test` は、SQL操作用ユーザーで以下を確認する。

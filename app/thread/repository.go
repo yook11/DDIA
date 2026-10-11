@@ -134,10 +134,10 @@ func fetchThread(ctx context.Context, readPool *pgxpool.Pool, threadNumber int64
 
 func fetchThreadPosts(ctx context.Context, readPool *pgxpool.Pool, threadNumber int64) ([]ThreadPost, error) {
 	rows, err := readPool.Query(ctx, `
-		SELECT id, thread_id, author_id, body, reply_to
+		SELECT id, thread_id, author_id, body, post_number, reply_to
 		FROM board.posts
 		WHERE thread_id = $1
-		ORDER BY id
+		ORDER BY post_number
 	`, threadNumber)
 	if err != nil {
 		return nil, fmt.Errorf("get thread posts: %w", err)
@@ -150,8 +150,9 @@ func fetchThreadPosts(ctx context.Context, readPool *pgxpool.Pool, threadNumber 
 		var postThreadID int64
 		var postAuthorID int64
 		var body string
+		var number int
 		var replyTo pgtype.Int8
-		if err := rows.Scan(&postID, &postThreadID, &postAuthorID, &body, &replyTo); err != nil {
+		if err := rows.Scan(&postID, &postThreadID, &postAuthorID, &body, &number, &replyTo); err != nil {
 			return nil, fmt.Errorf("scan thread post: %w", err)
 		}
 
@@ -160,6 +161,7 @@ func fetchThreadPosts(ctx context.Context, readPool *pgxpool.Pool, threadNumber 
 			ThreadID: ID(strconv.FormatInt(postThreadID, 10)),
 			AuthorID: user.ID(strconv.FormatInt(postAuthorID, 10)),
 			Body:     body,
+			Number:   number,
 		}
 		if replyTo.Valid {
 			replyToID := PostID(strconv.FormatInt(replyTo.Int64, 10))

@@ -18,6 +18,8 @@ type Post struct {
 	ThreadID thread.ID
 	AuthorID user.ID
 	Body     string
+	// Number はスレッド内の連番（>>1 の番号）。
+	Number int
 
 	// ReplyTo は返信先の投稿。nilならスレッドへの通常投稿。
 	ReplyTo *ID
