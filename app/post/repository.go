@@ -56,39 +56,26 @@ func (r *repository) CreatePost(
 	var storedNumber int
 
 	writePool := r.router.WritePool()
-	tx, err := writePool.Begin(ctx)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("create post: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
 	// スレッドの行で採番する。同じスレッドへの投稿は、この行のロックによりコミットまで直列になる。
-	var number int
-	err = tx.QueryRow(ctx, `
-		UPDATE board.threads
-		SET post_count = post_count + 1
-		WHERE id = $1
-		RETURNING post_count
-	`, threadNumber).Scan(&number)
+	// 採番とINSERTを1文（1トランザクション）にし、ロックを持ったままクライアントと往復しない。
+	err = writePool.QueryRow(ctx, `
+		WITH numbered AS (
+			UPDATE board.threads
+			SET post_count = post_count + 1
+			WHERE id = $1
+			RETURNING id, post_count
+		)
+		INSERT INTO board.posts (thread_id, author_id, body, post_number)
+		SELECT numbered.id, $2, $3, numbered.post_count FROM numbered
+		RETURNING id, thread_id, author_id, body, post_number
+	`, threadNumber, authorNumber, body).Scan(
+		&id, &storedThreadID, &storedAuthorID, &storedBody, &storedNumber,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return WriteResult{}, ErrThreadNotFound
 	}
 	if err != nil {
-		return WriteResult{}, fmt.Errorf("create post: %w", err)
-	}
-
-	err = tx.QueryRow(ctx, `
-		INSERT INTO board.posts (thread_id, author_id, body, post_number)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, thread_id, author_id, body, post_number
-	`, threadNumber, authorNumber, body, number).Scan(
-		&id, &storedThreadID, &storedAuthorID, &storedBody, &storedNumber,
-	)
-	if err != nil {
 		return WriteResult{}, mapCreatePostError(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return WriteResult{}, fmt.Errorf("create post: %w", err)
 	}
 
 	position, err := postgres.CurrentPosition(ctx, writePool)
