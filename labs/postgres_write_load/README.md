@@ -19,7 +19,14 @@ make load-closed                           # 1a: 1000スレッドへ分散、並
 make load-closed THREADS=1                 # 1b: 全ワーカーが同じスレッドへ書く
 make load-open RATES=4000,7000,8500 POOL=16  # 一定レートで送る。飽和点はclosedの結果から決める
 make load-closed LOAD_ARGS='-warmup 2s -duration 10s'  # 短く試す
+make load-closed THREADS=1 NUMBERING=optimistic  # レス番号を楽観的に採番する
 ```
+
+`NUMBERING` はレス番号の採番方式（`app/post/repository.go` の `Numbering`）。
+`pessimistic`（既定）はスレッドの行の `post_count` を進め、`optimistic` は最大の番号 + 1 で書いて
+一意制約に違反したらやり直す。サーバーでは環境変数 `POST_NUMBERING` で選ぶ。
+実行の最後に、負荷用スレッドのレス番号が1から欠番なく続き、完了を返した投稿がすべて残っているかを
+検査して `check.json` に書く。
 
 各段は慣らし5秒＋計測30秒。段の間ではレプリカが追いつくまで待つ（最大60秒）。
 結果は `results/<日時>/` に出る（git管理外）。最後に段ごとの表を表示する。
@@ -79,6 +86,10 @@ UPDATE で取ったスレッドの行のロックは COMMIT のfsyncが終わる
 **`ins/fsync`** は、WALのfsync 1回でまとめてディスクへ書けた投稿の数（グループコミット）。
 LSNを読むSELECTもコミットに数えられるがfsyncしないので、コミット数ではなく投稿数で割っている。
 fsyncの回数は1秒あたりおよそ `1 / fsync時間` で頭打ちになり、それ以上はまとめる数を増やすしかない。
+
+**`rb/s`** はロールバックしたトランザクションの数。楽観的な採番では、一意制約に違反してやり直した回数になる。
+`insert/s` は `pg_stat_user_tables.n_tup_ins` から数えるので、ロールバックされたINSERTも含む。
+楽観的な採番では成功数より大きく出るので、成功数は `ok/s` を見る（`ins/fsync` も同じ理由で過大になる）。
 
 統計ビュー（`pg_stat_database`、`pg_stat_io` など）はバックエンドが約1秒ごとにまとめて反映するので、
 1秒ごとの値は揺れ、約1秒遅れる。比較には計測窓全体の値を使う。WALの量だけはLSNの差で即時に測っている。

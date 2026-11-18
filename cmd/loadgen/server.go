@@ -33,6 +33,7 @@ type serverSecond struct {
 	WALFPI           int64              `json:"wal_fpi"`
 	WALBuffersFull   int64              `json:"wal_buffers_full"`
 	Commits          int64              `json:"commits"`
+	Rollbacks        int64              `json:"rollbacks"`
 	PostsInserted    int64              `json:"posts_inserted"`
 	ClientFsyncs     int64              `json:"client_wal_fsyncs"`
 	ClientFsyncMs    float64            `json:"client_wal_fsync_ms"`
@@ -66,6 +67,7 @@ type counters struct {
 	walFPI           int64
 	walBuffersFull   int64
 	commits          int64
+	rollbacks        int64
 	postsInserted    int64
 	clientFsyncs     int64
 	clientFsyncMs    float64
@@ -167,6 +169,7 @@ func (s *sampler) loop(ctx context.Context, prev counters) {
 			WALFPI:           cur.walFPI - prev.walFPI,
 			WALBuffersFull:   cur.walBuffersFull - prev.walBuffersFull,
 			Commits:          cur.commits - prev.commits,
+			Rollbacks:        cur.rollbacks - prev.rollbacks,
 			PostsInserted:    cur.postsInserted - prev.postsInserted,
 			ClientFsyncs:     cur.clientFsyncs - prev.clientFsyncs,
 			ClientFsyncMs:    cur.clientFsyncMs - prev.clientFsyncMs,
@@ -265,6 +268,7 @@ func readCounters(ctx context.Context, pool *pgxpool.Pool) (counters, error) {
 			(pg_current_wal_insert_lsn() - '0/0'::pg_lsn)::bigint,
 			w.wal_records, w.wal_fpi, w.wal_buffers_full,
 			(SELECT xact_commit FROM pg_stat_database WHERE datname = current_database()),
+			(SELECT xact_rollback FROM pg_stat_database WHERE datname = current_database()),
 			(SELECT n_tup_ins FROM pg_stat_user_tables WHERE relid = 'board.posts'::regclass),
 			io.client_fsyncs, io.client_fsync_ms, io.walwriter_fsyncs, io.walwriter_fsync_ms
 		FROM pg_stat_wal w,
@@ -278,7 +282,7 @@ func readCounters(ctx context.Context, pool *pgxpool.Pool) (counters, error) {
 			WHERE object = 'wal'
 		) io
 	`).Scan(
-		&c.lsn, &c.walRecords, &c.walFPI, &c.walBuffersFull, &c.commits, &c.postsInserted,
+		&c.lsn, &c.walRecords, &c.walFPI, &c.walBuffersFull, &c.commits, &c.rollbacks, &c.postsInserted,
 		&c.clientFsyncs, &c.clientFsyncMs, &c.walwriterFsyncs, &c.walwriterFsyncMs,
 	)
 	if err != nil {
@@ -364,21 +368,23 @@ func readReplication(ctx context.Context, pool *pgxpool.Pool) ([]replicaState, [
 
 // serverWindow は計測窓の間の観測をまとめた値。
 type serverWindow struct {
-	Seconds                  float64            `json:"seconds"`
-	Sessions                 map[string]float64 `json:"sessions"`
-	WALBytesPerSec           float64            `json:"wal_bytes_per_s"`
-	WALRecordsPerSec         float64            `json:"wal_records_per_s"`
-	WALFPIPerSec             float64            `json:"wal_fpi_per_s"`
-	WALBuffersFull           int64              `json:"wal_buffers_full"`
-	CommitsPerSec            float64            `json:"commits_per_s"`
-	PostsInsertedPerSec      float64            `json:"posts_inserted_per_s"`
-	ClientFsyncsPerSec       float64            `json:"client_wal_fsyncs_per_s"`
-	ClientFsyncMsAvg         float64            `json:"client_wal_fsync_ms_avg"`
-	WalwriterFsyncsPerSec    float64            `json:"walwriter_wal_fsyncs_per_s"`
-	PrimaryCPUCores          float64            `json:"primary_cpu_cores"`
-	PrimaryThrottledMsPerSec float64            `json:"primary_throttled_ms_per_s"`
-	MaxLagBytes              int64              `json:"max_lag_bytes"`
-	MaxReplayLagSec          float64            `json:"max_replay_lag_s"`
+	Seconds          float64            `json:"seconds"`
+	Sessions         map[string]float64 `json:"sessions"`
+	WALBytesPerSec   float64            `json:"wal_bytes_per_s"`
+	WALRecordsPerSec float64            `json:"wal_records_per_s"`
+	WALFPIPerSec     float64            `json:"wal_fpi_per_s"`
+	WALBuffersFull   int64              `json:"wal_buffers_full"`
+	CommitsPerSec    float64            `json:"commits_per_s"`
+	// RollbacksPerSec は失敗したトランザクションの数。楽観的な採番では、やり直した回数になる。
+	RollbacksPerSec          float64 `json:"rollbacks_per_s"`
+	PostsInsertedPerSec      float64 `json:"posts_inserted_per_s"`
+	ClientFsyncsPerSec       float64 `json:"client_wal_fsyncs_per_s"`
+	ClientFsyncMsAvg         float64 `json:"client_wal_fsync_ms_avg"`
+	WalwriterFsyncsPerSec    float64 `json:"walwriter_wal_fsyncs_per_s"`
+	PrimaryCPUCores          float64 `json:"primary_cpu_cores"`
+	PrimaryThrottledMsPerSec float64 `json:"primary_throttled_ms_per_s"`
+	MaxLagBytes              int64   `json:"max_lag_bytes"`
+	MaxReplayLagSec          float64 `json:"max_replay_lag_s"`
 	// MinSafeWALBytes はスロットが失効するまでに書けるWAL量の最小値。-1は不明。
 	MinSafeWALBytes int64 `json:"min_safe_wal_bytes"`
 }
@@ -388,7 +394,7 @@ func (s *sampler) window(from, to time.Time) serverWindow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w := serverWindow{Sessions: map[string]float64{}, MinSafeWALBytes: -1}
-	var walBytes, walRecords, walFPI, commits, inserted, clientFsyncs, walwriterFsyncs int64
+	var walBytes, walRecords, walFPI, commits, rollbacks, inserted, clientFsyncs, walwriterFsyncs int64
 	var clientFsyncMs, cpuSeconds, throttledMs float64
 	for _, sec := range s.seconds {
 		if !sec.T.After(from) || sec.T.After(to) {
@@ -403,6 +409,7 @@ func (s *sampler) window(from, to time.Time) serverWindow {
 		walFPI += sec.WALFPI
 		w.WALBuffersFull += sec.WALBuffersFull
 		commits += sec.Commits
+		rollbacks += sec.Rollbacks
 		inserted += sec.PostsInserted
 		clientFsyncs += sec.ClientFsyncs
 		clientFsyncMs += sec.ClientFsyncMs
@@ -433,6 +440,7 @@ func (s *sampler) window(from, to time.Time) serverWindow {
 	w.WALRecordsPerSec = float64(walRecords) / w.Seconds
 	w.WALFPIPerSec = float64(walFPI) / w.Seconds
 	w.CommitsPerSec = float64(commits) / w.Seconds
+	w.RollbacksPerSec = float64(rollbacks) / w.Seconds
 	w.PostsInsertedPerSec = float64(inserted) / w.Seconds
 	w.ClientFsyncsPerSec = float64(clientFsyncs) / w.Seconds
 	w.WalwriterFsyncsPerSec = float64(walwriterFsyncs) / w.Seconds

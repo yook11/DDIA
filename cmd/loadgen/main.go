@@ -52,6 +52,7 @@ type config struct {
 	bodyBytes int
 	seed      uint64
 	slotGuard int64
+	numbering post.Numbering
 }
 
 func main() {
@@ -68,7 +69,7 @@ func readConfig(args []string, getenv func(string) string) (config, error) {
 		appURL:   strings.TrimSpace(getenv("PRIMARY_DATABASE_URL")),
 		adminURL: strings.TrimSpace(getenv("ADMIN_DATABASE_URL")),
 	}
-	var levels, rates string
+	var levels, rates, numbering string
 	var slotGuardMB int64
 	fs := flag.NewFlagSet("loadgen", flag.ContinueOnError)
 	fs.StringVar(&cfg.mode, "mode", "closed", "closed | open | observe")
@@ -85,10 +86,19 @@ func readConfig(args []string, getenv func(string) string) (config, error) {
 	fs.IntVar(&cfg.bodyBytes, "body-bytes", 200, "投稿本文のバイト数")
 	fs.Uint64Var(&cfg.seed, "seed", 1, "スレッドと投稿者の選択に使う乱数の種")
 	fs.Int64Var(&slotGuardMB, "slot-guard-mb", 512, "スロットの残り保持量がこれを下回ったら中断する")
+	fs.StringVar(&numbering, "numbering", "pessimistic", "レス番号の採番方式: pessimistic | optimistic")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
+	// flag は最初の非フラグ引数で解析を止める。残りを黙って捨てると、指定したつもりの条件で測れない。
+	if fs.NArg() > 0 {
+		return config{}, fmt.Errorf("unexpected arguments: %q", fs.Args())
+	}
 	cfg.slotGuard = slotGuardMB << 20
+	var err error
+	if cfg.numbering, err = post.ParseNumbering(numbering); err != nil {
+		return config{}, err
+	}
 
 	if cfg.adminURL == "" {
 		return config{}, errors.New("ADMIN_DATABASE_URL is required")
@@ -96,7 +106,6 @@ func readConfig(args []string, getenv func(string) string) (config, error) {
 	if cfg.out == "" {
 		return config{}, errors.New("-out is required")
 	}
-	var err error
 	switch cfg.mode {
 	case "observe":
 		return cfg, nil
@@ -175,7 +184,7 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 	defer primary.Close()
 
 	router := postgres.NewRouter(primary, nil)
-	posts := post.NewService(post.NewRepository(router))
+	posts := post.NewService(post.NewRepository(router, cfg.numbering))
 	w, err := prepareWorkload(
 		ctx,
 		user.NewService(user.NewRepository(primary)),
@@ -209,6 +218,8 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 	if cfg.mode == "open" {
 		values = cfg.rates
 	}
+	fmt.Printf("numbering: %s, threads: %d\n", cfg.numbering, cfg.threads)
+	acknowledged := 0
 	for i, value := range values {
 		if i > 0 {
 			sampler.waitCaughtUp(runCtx, cfg.settle)
@@ -220,6 +231,11 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 			lv = runOpen(runCtx, posts, primary, w, value, cfg.seed, cfg.warmup, cfg.duration, cfg.drain)
 		}
 		lv.pool = cfg.pool
+		for _, o := range lv.ops {
+			if o.err == nil {
+				acknowledged++
+			}
+		}
 		if err := report.add(lv, sampler.window(lv.measureAt, lv.stopAt), probe.snapshot()); err != nil {
 			return err
 		}
@@ -228,6 +244,9 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 		}
 	}
 	report.printTable()
+	if err := checkPostNumbers(ctx, primary, w, acknowledged, cfg.out); err != nil {
+		return err
+	}
 	if cause := context.Cause(runCtx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return fmt.Errorf("run aborted: %w", cause)
 	}
@@ -334,6 +353,7 @@ func writeMeta(cfg config, label string, server serverInfo, args []string) error
 		"drain":      cfg.drain.String(),
 		"body_bytes": cfg.bodyBytes,
 		"seed":       cfg.seed,
+		"numbering":  cfg.numbering.String(),
 		"host": map[string]any{
 			"goos": runtime.GOOS, "goarch": runtime.GOARCH, "num_cpu": runtime.NumCPU(),
 			"gomaxprocs": runtime.GOMAXPROCS(0), "go": runtime.Version(),

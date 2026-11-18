@@ -258,8 +258,8 @@ func formatSummary(s summary) string {
 
 func formatServer(w serverWindow) string {
 	return fmt.Sprintf(
-		"srv %.0f commit/s %.0f insert/s | cpu %.2f cores, throttled %.0fms/s | fsync %.0f/s (%.1f insert/fsync, %.2fms) walwriter %.0f/s | wal %.2fMB/s fpi %.0f/s bufFull %d | lag ≤%.2fMB %.2fs | %s",
-		w.CommitsPerSec, w.PostsInsertedPerSec, w.PrimaryCPUCores, w.PrimaryThrottledMsPerSec,
+		"srv %.0f commit/s %.0f rollback/s %.0f insert/s | cpu %.2f cores, throttled %.0fms/s | fsync %.0f/s (%.1f insert/fsync, %.2fms) walwriter %.0f/s | wal %.2fMB/s fpi %.0f/s bufFull %d | lag ≤%.2fMB %.2fs | %s",
+		w.CommitsPerSec, w.RollbacksPerSec, w.PostsInsertedPerSec, w.PrimaryCPUCores, w.PrimaryThrottledMsPerSec,
 		w.ClientFsyncsPerSec, insertsPerFsync(w), w.ClientFsyncMsAvg, w.WalwriterFsyncsPerSec,
 		w.WALBytesPerSec/(1<<20), w.WALFPIPerSec, w.WALBuffersFull,
 		float64(w.MaxLagBytes)/(1<<20), w.MaxReplayLagSec,
@@ -306,12 +306,12 @@ func formatSessions(sessions map[string]float64) string {
 
 func (r *report) printTable() {
 	fmt.Println()
-	fmt.Printf("%-6s %5s %9s %8s %8s %8s %6s %6s %7s %8s %9s %9s %8s %8s %s\n",
-		"mode", "value", "ok/s", "mean_ms", "p99_ms", "L", "err", "cpu", "thr_ms", "fsync/s", "ins/fsync", "wal_MB/s", "lag_MB", "stall_ms", "top sessions")
+	fmt.Printf("%-6s %5s %9s %8s %8s %8s %6s %8s %6s %7s %8s %9s %9s %8s %8s %s\n",
+		"mode", "value", "ok/s", "mean_ms", "p99_ms", "L", "err", "rb/s", "cpu", "thr_ms", "fsync/s", "ins/fsync", "wal_MB/s", "lag_MB", "stall_ms", "top sessions")
 	for _, s := range r.rows {
-		fmt.Printf("%-6s %5d %9.1f %8.2f %8.2f %8.1f %6d %6.2f %7.0f %8.0f %9.1f %9.2f %8.2f %8.0f %s\n",
+		fmt.Printf("%-6s %5d %9.1f %8.2f %8.2f %8.1f %6d %8.0f %6.2f %7.0f %8.0f %9.1f %9.2f %8.2f %8.0f %s\n",
 			s.Mode, s.Value, s.ThroughputPerSec, s.MeanMs, s.P99Ms, s.LittleConcurrency,
-			s.Errors+s.Unfinished, s.Server.PrimaryCPUCores, s.Server.PrimaryThrottledMsPerSec, s.Server.ClientFsyncsPerSec, insertsPerFsync(s.Server),
+			s.Errors+s.Unfinished, s.Server.RollbacksPerSec, s.Server.PrimaryCPUCores, s.Server.PrimaryThrottledMsPerSec, s.Server.ClientFsyncsPerSec, insertsPerFsync(s.Server),
 			s.Server.WALBytesPerSec/(1<<20), float64(s.Server.MaxLagBytes)/(1<<20), s.StallMs,
 			formatSessions(s.Server.Sessions))
 	}
