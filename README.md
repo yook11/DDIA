@@ -87,6 +87,7 @@ fake/simulator.Application.ViewThread(session, ...)
 
 - [`fake/replication_lag/`](fake/replication_lag/) — 偽DBによる5.2 レプリケーションラグ
 - [`labs/postgres_replication/`](labs/postgres_replication/) — 実PostgreSQLで同じデータの複製・適用位置をSQL確認（`make db-test`）
+- [`labs/postgres_write_load/`](labs/postgres_write_load/) — 単一primaryへ並列に投稿し、書き込みの限界と待ちの内訳を記録（`make load-closed`）
 
 Goシミュレーションのテスト:
 

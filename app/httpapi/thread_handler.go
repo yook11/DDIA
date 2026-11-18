@@ -24,6 +24,7 @@ type getThreadPostResponse struct {
 	ThreadID thread.ID      `json:"thread_id"`
 	AuthorID user.ID        `json:"author_id"`
 	Body     string         `json:"body"`
+	Number   int            `json:"number"`
 	ReplyTo  *thread.PostID `json:"reply_to"`
 }
 
@@ -94,6 +95,7 @@ func (h *ThreadHandler) Get(w http.ResponseWriter, r *http.Request) {
 			ThreadID: post.ThreadID,
 			AuthorID: post.AuthorID,
 			Body:     post.Body,
+			Number:   post.Number,
 			ReplyTo:  post.ReplyTo,
 		})
 	}

@@ -1,5 +1,8 @@
 -- All fixture rows roll back. Sequences may advance, as in normal failed writes.
 BEGIN;
+-- The write-load lab grows board.posts. Deleting a referenced row makes the foreign-key
+-- check scan posts.reply_to / posts.author_id, which have no index, so 5s is not enough.
+SET LOCAL statement_timeout = '60s';
 DO $$
 DECLARE
     user_id bigint;
@@ -20,10 +23,10 @@ BEGIN
     END IF;
     INSERT INTO board.threads (title, author_id)
         VALUES ('db-board-test', user_id) RETURNING id INTO thread_id;
-    INSERT INTO board.posts (thread_id, author_id, body)
-        VALUES (thread_id, user_id, 'first post') RETURNING id INTO post_id;
-    INSERT INTO board.posts (thread_id, author_id, body, reply_to)
-        VALUES (thread_id, other_user_id, 'reply', post_id) RETURNING id INTO reply_id;
+    INSERT INTO board.posts (thread_id, author_id, body, post_number)
+        VALUES (thread_id, user_id, 'first post', 1) RETURNING id INTO post_id;
+    INSERT INTO board.posts (thread_id, author_id, body, reply_to, post_number)
+        VALUES (thread_id, other_user_id, 'reply', post_id, 2) RETURNING id INTO reply_id;
     IF post_id = reply_id OR NOT EXISTS (
         SELECT 1 FROM board.posts p
         JOIN board.threads t ON t.id = p.thread_id
@@ -32,6 +35,17 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Post relationships are not readable';
     END IF;
+    BEGIN
+        INSERT INTO board.posts (thread_id, author_id, body, post_number)
+            VALUES (thread_id, user_id, 'same number', 1);
+        RAISE EXCEPTION 'Duplicate post number in a thread was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO board.posts (thread_id, author_id, body) VALUES (thread_id, user_id, 'no number');
+        RAISE EXCEPTION 'Post without a number was accepted';
+    EXCEPTION WHEN not_null_violation THEN NULL;
+    END;
 
     -- A deleted test user provides a guaranteed nonexistent foreign key.
     DELETE FROM board.posts WHERE id = reply_id;
@@ -42,14 +56,14 @@ BEGIN
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
     BEGIN
-        INSERT INTO board.posts (thread_id, author_id, body)
-            VALUES (thread_id, other_user_id, 'orphan author');
+        INSERT INTO board.posts (thread_id, author_id, body, post_number)
+            VALUES (thread_id, other_user_id, 'orphan author', 3);
         RAISE EXCEPTION 'Missing post author was accepted';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
     BEGIN
-        INSERT INTO board.posts (thread_id, author_id, body, reply_to)
-            VALUES (thread_id, user_id, 'orphan reply', reply_id);
+        INSERT INTO board.posts (thread_id, author_id, body, reply_to, post_number)
+            VALUES (thread_id, user_id, 'orphan reply', reply_id, 3);
         RAISE EXCEPTION 'Missing reply target was accepted';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
@@ -64,7 +78,7 @@ BEGIN
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
     BEGIN
-        INSERT INTO board.posts (thread_id, author_id, body) VALUES (thread_id, user_id, NULL);
+        INSERT INTO board.posts (thread_id, author_id, body, post_number) VALUES (thread_id, user_id, NULL, 3);
         RAISE EXCEPTION 'NULL post body was accepted';
     EXCEPTION WHEN not_null_violation THEN NULL;
     END;
@@ -100,7 +114,8 @@ BEGIN
     DELETE FROM board.posts WHERE id = post_id;
     DELETE FROM board.threads WHERE id = thread_id;
     BEGIN
-        INSERT INTO board.posts (thread_id, author_id, body) VALUES (thread_id, user_id, 'orphan thread');
+        INSERT INTO board.posts (thread_id, author_id, body, post_number)
+            VALUES (thread_id, user_id, 'orphan thread', 1);
         RAISE EXCEPTION 'Missing post thread was accepted';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;

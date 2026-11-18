@@ -27,5 +27,16 @@ BEGIN
     IF to_regclass('board.posts_thread_id_id_idx') IS NULL THEN
         RAISE EXCEPTION 'Missing thread lookup index';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'board' AND table_name = 'posts' AND column_name = 'post_number'
+          AND data_type = 'integer' AND is_nullable = 'NO')
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'board' AND table_name = 'threads' AND column_name = 'post_count'
+          AND data_type = 'integer' AND is_nullable = 'NO')
+       OR NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conname = 'posts_thread_id_post_number_key' AND contype = 'u'
+          AND conrelid = 'board.posts'::regclass) THEN
+        RAISE EXCEPTION 'Missing post numbers (002_post_number)';
+    END IF;
 END
 $$;
