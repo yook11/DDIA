@@ -26,6 +26,7 @@ type config struct {
 	primaryURL string
 	replicaURL string
 	httpAddr   string
+	numbering  post.Numbering
 }
 
 func readConfig(getenv func(string) string) (config, error) {
@@ -43,6 +44,11 @@ func readConfig(getenv func(string) string) (config, error) {
 	if cfg.httpAddr == "" {
 		cfg.httpAddr = "127.0.0.1:18080"
 	}
+	numbering, err := post.ParseNumbering(strings.TrimSpace(getenv("POST_NUMBERING")))
+	if err != nil {
+		return config{}, fmt.Errorf("POST_NUMBERING: %w", err)
+	}
+	cfg.numbering = numbering
 	return cfg, nil
 }
 
@@ -82,7 +88,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	threads := thread.NewService(threadRepository)
 
 	users := user.NewService(user.NewRepository(primary))
-	posts := post.NewService(post.NewRepository(router))
+	posts := post.NewService(post.NewRepository(router, cfg.numbering))
 	handlers := httpapi.Handlers{
 		Users:   httpapi.NewUserHandler(users),
 		Threads: httpapi.NewThreadHandler(threads),

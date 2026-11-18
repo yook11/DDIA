@@ -49,6 +49,10 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, post.ErrAuthorNotFound):
 		writeError(w, http.StatusNotFound, "user not found")
 		return
+	case errors.Is(err, post.ErrPostNumberConflict):
+		// 他の投稿と同じレス番号を取り合って負け続けた。時間をおけば成功しうる。
+		writeError(w, http.StatusServiceUnavailable, "post number conflict, retry later")
+		return
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
